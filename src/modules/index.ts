@@ -1,2 +1,2 @@
 export { FilesModule } from './files/files.module';
-export { CompressorModule } from './compressor/compressor.module';
+export { ImageCompressorModule } from './imageCompressor/imageCompressor.module';

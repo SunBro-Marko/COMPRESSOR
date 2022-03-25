@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import sharp from 'sharp';
-import { fromBuffer } from 'file-type';
+import { fromBuffer, fromStream } from 'file-type';
 
 @Injectable()
-export class CompressorService {
+export class ImageCompressorService {
   constructor() {
     //
   }
@@ -59,5 +59,12 @@ export class CompressorService {
       const logger = global.app.models.Log;
       logger.LogData({});
     }
+  }
+
+  getCompressPipe() {
+    const compressPipe = sharp()
+      .resize(null, this.maxHeight)
+      .jpeg({ quality: this.quality });
+    return compressPipe;
   }
 }

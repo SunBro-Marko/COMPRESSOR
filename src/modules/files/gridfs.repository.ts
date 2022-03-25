@@ -1,9 +1,17 @@
 import { ObjectID } from 'bson';
 import * as fs from 'fs';
-import { Db, GridFSBucket, GridFSBucketReadStream, GridFSFile } from 'mongodb';
+import {
+  GridFSBucket,
+  GridFSBucketReadStream,
+  GridFSFile,
+  FindOptions,
+} from 'mongodb';
 import osTmpdir = require('os-tmpdir');
 import { Stream } from 'stream';
 import uniqueFilename = require('unique-filename');
+
+import { Connection, Collection } from 'mongoose';
+import { InjectConnection } from '@nestjs/mongoose';
 
 export interface IGridFSObject {
   _id: ObjectID;
@@ -16,10 +24,15 @@ export interface IGridFSObject {
   metadata: object;
 }
 
+export interface Metadata {
+  [key: string]: any;
+  container: string;
+}
+
 export interface IGridFSWriteOption {
   filename: string;
   chunkSizeBytes?: number;
-  metadata?: any;
+  metadata?: Metadata;
   contentType?: string;
   aliases?: string[];
 }
@@ -38,19 +51,25 @@ export interface IDownloadOptions {
   targetDir?: string;
 }
 
+export interface IDownloadStreamWithDocument {
+  document: GridFSFile;
+  stream: GridFSBucketReadStream;
+}
+
 export class GridFSRepository {
-  /**
-   * Constructor
-   * @param {connection} connection
-   * @param {string} bucketName
-   */
   constructor(
-    public readonly connection: Db,
+    @InjectConnection('gridFS') private connection: Connection,
     public readonly bucketName: string = 'fs',
   ) {}
 
-  public get bucket(): GridFSBucket {
-    return new GridFSBucket(this.connection, { bucketName: this.bucketName });
+  get bucket(): GridFSBucket {
+    return new GridFSBucket(this.connection.db, {
+      bucketName: this.bucketName,
+    });
+  }
+
+  get filesCollection() {
+    return this.connection.db.collection('fs.files');
   }
 
   getDownloadPath(
@@ -92,6 +111,18 @@ export class GridFSRepository {
   async readFileStream(id: string): Promise<GridFSBucketReadStream> {
     const object = await this.findById(id);
     return this.bucket.openDownloadStream(object._id);
+  }
+
+  /**
+   * Returns a stream of a file from the GridFS.
+   * @param {string} id
+   * @return {Promise<GridFSBucketReadStream>}
+   */
+  async readFileStreamWithDocument(
+    id: string,
+  ): Promise<IDownloadStreamWithDocument> {
+    const document = await this.findById(id);
+    return { document, stream: this.bucket.openDownloadStream(document._id) };
   }
 
   /**
@@ -143,8 +174,57 @@ export class GridFSRepository {
    * @param filter
    * @return {Promise<IGridFSObject[]>}
    */
-  async find(filter: any): Promise<GridFSFile[]> {
-    return await this.bucket.find(filter).toArray();
+  async getAllFileTypes(): Promise<any> {
+    const filesTypes = await this.filesCollection.distinct('metadata.mimetype');
+    return filesTypes;
+  }
+
+  /**
+   * Find a list of object by condition
+   * @param filter
+   * @return {Promise<IGridFSObject[]>}
+   */
+  async getTotalFilesSizeAndCount(
+    filter: any,
+    options?: FindOptions,
+  ): Promise<any[]> {
+    const files = <any>await this.filesCollection
+      .aggregate(
+        [
+          { $match: filter },
+          {
+            $group: {
+              _id: '$metadata.mimetype',
+              count: { $sum: 1 },
+              totalSize: { $sum: '$length' },
+            },
+          },
+        ],
+        options,
+      )
+      .toArray();
+    return files;
+  }
+
+  /**
+   * Find a list of object by condition
+   * @param filter
+   * @return {Promise<IGridFSObject[]>}
+   */
+  async find(filter: any, options?: FindOptions): Promise<IGridFSObject[]> {
+    const files = <IGridFSObject[]>(
+      await this.filesCollection.find(filter, options).toArray()
+    );
+    return files;
+  }
+
+  /**
+   * Find a list of object by condition
+   * @param filter
+   * @return {Promise<IGridFSObject[]>}
+   */
+  async count(filter: any, options?: FindOptions): Promise<void | number> {
+    return await this.filesCollection.count(filter, options);
   }
 
   /**
@@ -236,11 +316,43 @@ export class GridFSRepository {
   }
 
   /**
+   * Upload a file directly from a fs Path
+   * @param {string} uploadFilePath
+   * @param {IGridFSWriteOption} options
+   * @param {boolean} deleteFile
+   * @return {Promise<IGridFSObject>}
+   */
+  async uploadFileById(
+    uploadFilePath: string,
+    options: IGridFSWriteOptionWithId,
+    deleteFile = Boolean(true),
+  ): Promise<IGridFSObject> {
+    if (!fs.existsSync(uploadFilePath)) {
+      throw new Error('File not found');
+    }
+    const tryDeleteFile = (obj?: any): any => {
+      if (fs.existsSync(uploadFilePath) && deleteFile === true) {
+        fs.unlinkSync(uploadFilePath);
+      }
+      return obj;
+    };
+    return await this.writeFileStreamWithId(
+      fs.createReadStream(uploadFilePath),
+      options,
+    )
+      .then(tryDeleteFile)
+      .catch((err) => {
+        // tryDeleteFile(); А вот не надо удалять файл при неудачной попытке записи !
+        throw err;
+      });
+  }
+
+  /**
    * Delete an File from the GridFS
    * @param {string} id
    * @return {Promise<boolean>}
    */
-  delete(id: string): Promise<boolean> {
+  async delete(id: string): Promise<boolean> {
     return new Promise<boolean>((resolve, reject) => {
       this.bucket.delete(new ObjectID(id), async (err) => {
         if (err) {
