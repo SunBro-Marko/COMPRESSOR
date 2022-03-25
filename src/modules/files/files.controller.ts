@@ -17,6 +17,16 @@ export class FilesController {
     return this.filesService.getAllFileTypes();
   }
 
+  @Get('total-size-and-count/')
+  getAllFilesTotalSizeAndCount() {
+    return this.filesService.getTotalFilesSizeAndCount();
+  }
+
+  @Get('total-size-and-count/:type')
+  getAllFilesTotalSizeAndCountByType(@Param('type') type: string) {
+    return this.filesService.getTotalFilesSizeAndCountByType(type);
+  }
+
   @Get('/download/:id')
   downloadFileById(
     @Param('id') id: string,
@@ -28,6 +38,11 @@ export class FilesController {
   @Get('/compress/:id')
   compressFileById(@Param('id') id: string) {
     return this.filesService.compressFileById(id);
+  }
+
+  @Get('/compress-all-by-type/:type')
+  compressAllFilesByType(@Param('type') type: string) {
+    return this.filesService.compressAllFilesByType(type);
   }
 
   @Put('/initializeCats')

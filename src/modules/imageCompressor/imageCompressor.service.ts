@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import util from 'util';
+import stream from 'stream';
 import sharp from 'sharp';
 import { fromBuffer, fromStream } from 'file-type';
 
@@ -7,9 +9,9 @@ export class ImageCompressorService {
   constructor() {
     //
   }
-  private quality = 55; // хотелось бы readony
+  private quality = 60; // хотелось бы readony
   private maxHeight = 2000; // хотелось бы readony
-  private minSize = 500000; // В байтах
+  private minSize = 150000; // В байтах
 
   readonly validTypes = [
     'image/jpeg',
@@ -61,10 +63,23 @@ export class ImageCompressorService {
     }
   }
 
-  getCompressPipe() {
+  getCompressPipe(fileMeta) {
     const compressPipe = sharp()
-      .resize(null, this.maxHeight)
+      .resize(
+        null,
+        fileMeta.data.height <= this.maxHeight
+          ? fileMeta.data.height
+          : this.maxHeight,
+      )
       .jpeg({ quality: this.quality });
     return compressPipe;
+  }
+
+  getMetaDataPipe(fileMeta) {
+    return sharp().metadata((err, data) => {
+      console.log(data);
+
+      fileMeta['data'] = data;
+    });
   }
 }

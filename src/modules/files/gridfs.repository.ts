@@ -197,6 +197,7 @@ export class GridFSRepository {
               _id: '$metadata.mimetype',
               count: { $sum: 1 },
               totalSize: { $sum: '$length' },
+              documentsArray: { $push: '$_id' },
             },
           },
         ],
@@ -216,6 +217,15 @@ export class GridFSRepository {
       await this.filesCollection.find(filter, options).toArray()
     );
     return files;
+  }
+
+  /**
+   * Find a list of object by condition
+   * @param filter
+   * @return {Promise<IGridFSObject[]>}
+   */
+  getCursor(filter: any, options?: FindOptions) {
+    return this.filesCollection.find(filter, options);
   }
 
   /**
