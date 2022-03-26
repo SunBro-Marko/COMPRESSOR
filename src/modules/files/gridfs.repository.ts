@@ -24,6 +24,18 @@ export interface IGridFSObject {
   metadata: object;
 }
 
+export interface IGridFSFile {
+  _id: ObjectID;
+  length: number;
+  chunkSize: number;
+  filename: string;
+  contentType?: string;
+  md5?: string;
+  aliases?: string[];
+  metadata?: Document;
+  uploadDate: Date;
+}
+
 export interface Metadata {
   [key: string]: any;
   container: string;
@@ -116,13 +128,15 @@ export class GridFSRepository {
   /**
    * Returns a stream of a file from the GridFS.
    * @param {string} id
-   * @return {Promise<GridFSBucketReadStream>}
    */
   async readFileStreamWithDocument(
     id: string,
   ): Promise<IDownloadStreamWithDocument> {
     const document = await this.findById(id);
-    return { document, stream: this.bucket.openDownloadStream(document._id) };
+    return {
+      document: <IGridFSFile>document,
+      stream: this.bucket.openDownloadStream(document._id),
+    };
   }
 
   /**
@@ -197,7 +211,6 @@ export class GridFSRepository {
               _id: '$metadata.mimetype',
               count: { $sum: 1 },
               totalSize: { $sum: '$length' },
-              documentsArray: { $push: '$_id' },
             },
           },
         ],

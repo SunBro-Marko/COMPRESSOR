@@ -45,6 +45,11 @@ export class FilesController {
     return this.filesService.compressAllFilesByType(type);
   }
 
+  @Get('/compress-all-by-type/image/jpeg')
+  compressAllFilesByTypeJPEG() {
+    return this.filesService.compressAllFilesByType('image/jpeg');
+  }
+
   @Put('/initializeCats')
   initializeCats() {
     return this.filesService.UploadAThousandCats();

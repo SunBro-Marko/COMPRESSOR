@@ -4,10 +4,8 @@ import { ImageCompressorService } from '../imageCompressor/imageCompressor.servi
 import { GridFSRepository } from './gridfs.repository';
 
 import { promises as fsPromises } from 'fs';
-import util from 'util';
-import stream from 'stream';
-import * as fs from 'fs';
-import sharp from 'sharp';
+import { Stream } from 'stream';
+import md5File from 'md5-file';
 
 @Injectable()
 export class FilesService {
@@ -52,7 +50,7 @@ export class FilesService {
 
   async UploadAThousandCats(): Promise<string> {
     const catsPictureURI = 'src/modules/files/test/TheCat.jpg';
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 1000; i++) {
       const newFile = await this.gridFSRepository.uploadFile(
         catsPictureURI,
         {
@@ -86,18 +84,15 @@ export class FilesService {
   }
 
   async compressFileById(id: string): Promise<any> {
-    // this.logger.log(`> START compression file - ${id}`);
     const { document, stream: readFileStream } =
       await this.gridFSRepository.readFileStreamWithDocument(id);
 
-    const tempPath = `src/modules/files/tmp/${document.filename}`;
+    const documentWithMd5 = { md5: null, ...document };
 
-    const pipeline = util.promisify(stream.pipeline);
-    const writebleStream = fs.createWriteStream(tempPath);
+    const tempPath = `src/modules/files/tmp/${document._id}`;
+    const tempFile = `src/modules/files/tmp/${document._id}.json`;
 
-    await pipeline(readFileStream, writebleStream);
-
-    const fileBuffer = await fsPromises.readFile(tempPath);
+    const fileBuffer = await this.stream2buffer(readFileStream);
 
     const compressedFile = await this.imageCompressorService.compressBuffer(
       fileBuffer,
@@ -105,14 +100,13 @@ export class FilesService {
 
     await fsPromises.writeFile(tempPath, compressedFile.buffer);
 
-    // this.logger.log(
-    //   `File ${document._id} has been downloaded to FS and compressed`,
-    // );
+    await fsPromises.writeFile(tempFile, JSON.stringify(documentWithMd5));
 
-    // Создаём запись в базе данных с информацией о файле
     // Удаляем файл из gridfs
     await this.gridFSRepository.delete(id);
-    // this.logger.log(`Old file ${document._id} has been deleted from gridfs`);
+
+    // Вычисляем ХЭШ файла
+    const md5 = await md5File(tempPath);
 
     // Загружаем уже сжатый файл в gridfs бех удаления файла с диска
     const newFile = await this.gridFSRepository.uploadFileById(
@@ -120,18 +114,19 @@ export class FilesService {
       {
         id: document._id,
         filename: `${document.filename}`,
-        metadata: { ...document.metadata, isCompressed: true },
+        contentType: document.contentType || document?.metadata?.mimetype,
+        metadata: {
+          ...document.metadata,
+          isCompressed: true,
+          md5,
+          oldMd5: documentWithMd5?.md5 || null,
+        },
       },
       true,
     );
 
-    // this.logger.log(
-    //   `Compressed file ${document._id} has been uploaded to gridfs with id ${
-    //     newFile._id
-    //   } (isIDSame: ${newFile._id === document._id})`,
-    // );
-    // this.logger.log(`> END compression file - ${id}`);
-    // this.logger.log(`> `);
+    // Удаляем сохранённые временные файлы
+    await fsPromises.unlink(tempFile);
     return newFile;
   }
 
@@ -141,7 +136,9 @@ export class FilesService {
       'metadata.isCompressed': { $exists: false },
     };
 
-    const files = this.gridFSRepository.getCursor(filetypeFilter);
+    const files = this.gridFSRepository.getCursor(filetypeFilter, {
+      sort: { _id: -1 },
+    });
 
     let count = 0;
     let totalFreedSpace = 0;
@@ -165,5 +162,15 @@ export class FilesService {
     const endTime = Date.now();
     console.log(`Время выполнения: ${(endTime - startTime) / 60000} минут`);
     return;
+  }
+
+  async stream2buffer(stream: Stream): Promise<Buffer> {
+    return new Promise<Buffer>((resolve, reject) => {
+      const _buf = Array<any>();
+
+      stream.on('data', (chunk) => _buf.push(chunk));
+      stream.on('end', () => resolve(Buffer.concat(_buf)));
+      stream.on('error', (err) => reject(`error converting stream - ${err}`));
+    });
   }
 }

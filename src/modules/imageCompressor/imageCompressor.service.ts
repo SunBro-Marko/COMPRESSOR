@@ -1,8 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import util from 'util';
-import stream from 'stream';
 import sharp from 'sharp';
-import { fromBuffer, fromStream } from 'file-type';
 
 @Injectable()
 export class ImageCompressorService {
@@ -27,24 +24,23 @@ export class ImageCompressorService {
     return this.validTypes.includes(fileType);
   }
 
-  async getMetaDataFromBuffer(buffer) {
-    const { mime: fileType } = await fromBuffer(buffer);
-    if (!this.isFileTypeValid(fileType)) {
-      return null;
-    }
-    const image = sharp(buffer);
+  async getMetaDataFromBuffer(image) {
+    // const { mime: fileType } = await fromBuffer(buffer);
+    // if (!this.isFileTypeValid(fileType)) {
+    //   return null;
+    // }
     const { height, width, size } = await image.metadata();
     return { height, width, size };
   }
 
   async compressBuffer(buffer) {
-    const { mime: fileType } = await fromBuffer(buffer);
-    if (!this.isFileTypeValid(fileType)) {
-      return { isCompressed: false, buffer };
-    }
+    // const { mime: fileType } = await fromBuffer(buffer);
+    // if (!this.isFileTypeValid(fileType)) {
+    //   return { isCompressed: false, buffer };
+    // }
     try {
       const image = sharp(buffer);
-      const { height, size } = await this.getMetaDataFromBuffer(buffer);
+      const { height, size } = await this.getMetaDataFromBuffer(image);
       if (size <= this.minSize) {
         return { isCompressed: false, buffer };
       }
