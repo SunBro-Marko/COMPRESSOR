@@ -333,7 +333,7 @@ export class GridFSRepository {
     )
       .then(tryDeleteFile)
       .catch((err) => {
-        tryDeleteFile();
+        // tryDeleteFile();
         throw err;
       });
   }
