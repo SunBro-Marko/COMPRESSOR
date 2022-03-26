@@ -35,6 +35,11 @@ export class FilesController {
     return this.filesService.downloadFileById(id, res);
   }
 
+  @Get('/restore-file-from-temp/:id')
+  restoreFileFromTempbyId(@Param('id') id: string) {
+    return this.filesService.restoreFileFromTepmById(id);
+  }
+
   @Get('/compress/:id')
   compressFileById(@Param('id') id: string) {
     return this.filesService.compressFileById(id);

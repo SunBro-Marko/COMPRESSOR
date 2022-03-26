@@ -8,7 +8,6 @@ import { AppService } from './app.service';
 import * as Modules from '../modules';
 
 const dbUrl = configuration.database.mainDatabase;
-
 const db = MongooseModule.forRoot(dbUrl, {
   autoIndex: configuration.isProduction,
   connectionFactory: ConnectionCheckOutEvents,

@@ -2,7 +2,7 @@ import { Injectable, Logger, StreamableFile } from '@nestjs/common';
 import { Response } from 'express';
 import { ImageCompressorService } from '../imageCompressor/imageCompressor.service';
 import { GridFSRepository } from './gridfs.repository';
-
+import { Types } from 'mongoose';
 import { promises as fsPromises } from 'fs';
 import { Stream } from 'stream';
 import md5File from 'md5-file';
@@ -84,50 +84,54 @@ export class FilesService {
   }
 
   async compressFileById(id: string): Promise<any> {
-    const { document, stream: readFileStream } =
-      await this.gridFSRepository.readFileStreamWithDocument(id);
+    try {
+      const { document, stream: readFileStream } =
+        await this.gridFSRepository.readFileStreamWithDocument(id);
 
-    const documentWithMd5 = { md5: null, ...document };
+      const documentWithMd5 = { md5: null, ...document };
 
-    const tempPath = `src/modules/files/tmp/${document._id}`;
-    const tempFile = `src/modules/files/tmp/${document._id}.json`;
+      const tempPath = `src/modules/files/tmp/${document._id}`;
+      const tempFile = `src/modules/files/tmp/${document._id}.json`;
 
-    const fileBuffer = await this.stream2buffer(readFileStream);
+      const fileBuffer = await this.stream2buffer(readFileStream);
 
-    const compressedFile = await this.imageCompressorService.compressBuffer(
-      fileBuffer,
-    );
+      const compressedFile = await this.imageCompressorService.compressBuffer(
+        fileBuffer,
+      );
 
-    await fsPromises.writeFile(tempPath, compressedFile.buffer);
+      await fsPromises.writeFile(tempPath, compressedFile.buffer);
 
-    await fsPromises.writeFile(tempFile, JSON.stringify(documentWithMd5));
+      await fsPromises.writeFile(tempFile, JSON.stringify(documentWithMd5));
 
-    // Удаляем файл из gridfs
-    await this.gridFSRepository.delete(id);
+      // Удаляем файл из gridfs
+      await this.gridFSRepository.delete(id);
 
-    // Вычисляем ХЭШ файла
-    const md5 = await md5File(tempPath);
+      // Вычисляем ХЭШ файла
+      const md5 = await md5File(tempPath);
 
-    // Загружаем уже сжатый файл в gridfs бех удаления файла с диска
-    const newFile = await this.gridFSRepository.uploadFileById(
-      tempPath,
-      {
-        id: document._id,
-        filename: `${document.filename}`,
-        contentType: document.contentType || document?.metadata?.mimetype,
-        metadata: {
-          ...document.metadata,
-          isCompressed: true,
-          md5,
-          oldMd5: documentWithMd5?.md5 || null,
+      // Загружаем уже сжатый файл в gridfs бех удаления файла с диска
+      const newFile = await this.gridFSRepository.uploadFileById(
+        tempPath,
+        {
+          id: new Types.ObjectId(document._id),
+          filename: `${document.filename}`,
+          contentType: document.contentType || document?.metadata?.mimetype,
+          metadata: {
+            ...document.metadata,
+            isCompressed: true,
+            md5,
+            oldMd5: documentWithMd5?.md5 || null,
+          },
         },
-      },
-      true,
-    );
+        true,
+      );
 
-    // Удаляем сохранённые временные файлы
-    await fsPromises.unlink(tempFile);
-    return newFile;
+      // Удаляем сохранённые временные файлы
+      await fsPromises.unlink(tempFile);
+      return newFile;
+    } catch (e) {
+      this.logger.error(e.message);
+    }
   }
 
   async compressAllFilesByType(type: string): Promise<void> {
@@ -144,24 +148,52 @@ export class FilesService {
     let totalFreedSpace = 0;
     const startTime = Date.now();
     for await (const file of <any>files) {
-      try {
-        const oldSize = file.length;
-        const newFile = await this.compressFileById(file._id);
-        const newSize = newFile.length;
-        totalFreedSpace = totalFreedSpace + oldSize - newSize;
-        ++count;
-        this.logger.debug(
-          `${count} files compressed,${(totalFreedSpace / 1024 / 1024).toFixed(
-            2,
-          )} MB freed, last file id: ${file._id}`,
-        );
-      } catch (e) {
-        this.logger.error(e.message);
-      }
+      const oldSize = file.length;
+      const newFile = await this.compressFileById(file._id);
+      const newSize = newFile.length;
+      totalFreedSpace = totalFreedSpace + oldSize - newSize;
+      ++count;
+      this.logger.debug(
+        `${count} files compressed,${(totalFreedSpace / 1024 / 1024).toFixed(
+          2,
+        )} MB freed, last file id: ${file._id}`,
+      );
     }
     const endTime = Date.now();
     console.log(`Время выполнения: ${(endTime - startTime) / 60000} минут`);
     return;
+  }
+
+  async restoreFileFromTepmById(id) {
+    const tempPath = `src/modules/files/tmp/${id}`;
+    const tempFile = `src/modules/files/tmp/${id}.json`;
+    const data = await fsPromises.readFile(tempFile, {
+      encoding: 'utf8',
+    });
+    const document = JSON.parse(data);
+    // Вычисляем ХЭШ файла
+    const md5 = await md5File(tempPath);
+
+    // Загружаем уже сжатый файл в gridfs бех удаления файла с диска
+    const newFile = await this.gridFSRepository.uploadFileById(
+      tempPath,
+      {
+        id: new Types.ObjectId(document._id),
+        filename: `${document.filename}`,
+        contentType: document.contentType || document?.metadata?.mimetype,
+        metadata: {
+          ...document.metadata,
+          isCompressed: true,
+          md5,
+          oldMd5: document?.md5 || null,
+        },
+      },
+      true,
+    );
+
+    // Удаляем сохранённые временные файлы
+    await fsPromises.unlink(tempFile);
+    return newFile;
   }
 
   async stream2buffer(stream: Stream): Promise<Buffer> {
