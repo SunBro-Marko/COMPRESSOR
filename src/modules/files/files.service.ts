@@ -50,7 +50,7 @@ export class FilesService {
 
   async UploadAThousandCats(): Promise<string> {
     const catsPictureURI = 'src/modules/files/test/TheCat.jpg';
-    for (let i = 0; i < 1000; i++) {
+    for (let i = 0; i < 10; i++) {
       const newFile = await this.gridFSRepository.uploadFile(
         catsPictureURI,
         {
@@ -150,6 +150,10 @@ export class FilesService {
     for await (const file of <any>files) {
       const oldSize = file.length;
       const newFile = await this.compressFileById(file._id);
+      if (!newFile) {
+        this.logger.error(`Не удалось сжать файл ${file._id}`);
+        continue;
+      }
       const newSize = newFile.length;
       totalFreedSpace = totalFreedSpace + oldSize - newSize;
       ++count;

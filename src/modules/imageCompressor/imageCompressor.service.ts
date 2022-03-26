@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import sharp from 'sharp';
 
 @Injectable()
 export class ImageCompressorService {
+  private readonly logger = new Logger(ImageCompressorService.name);
   constructor() {
     //
   }
@@ -54,8 +55,8 @@ export class ImageCompressorService {
         buffer: compressed,
       };
     } catch (error) {
-      const logger = global.app.models.Log;
-      logger.LogData({});
+      this.logger.error(error.message);
+      throw error;
     }
   }
 
