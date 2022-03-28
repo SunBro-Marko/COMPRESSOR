@@ -234,7 +234,6 @@ export class FilesService {
           contentType: document.contentType || document?.metadata?.mimetype,
           metadata: {
             ...document.metadata,
-            isCompressed: true,
             md5,
             oldMd5: documentWithMd5?.md5 || null,
           },
@@ -244,7 +243,7 @@ export class FilesService {
       return newFile;
     } catch (e) {
       this.logger.error(e);
-      return `Не удалось заменить файл. ${e.message}`;
+      return `Не удалось заменить файл.`;
     }
   }
 
