@@ -168,7 +168,7 @@ export class FilesService {
     return;
   }
 
-  async restoreFileFromTepmById(id) {
+  async restoreFileFromTempById(id) {
     const tempPath = `src/modules/files/tmp/${id}`;
     const tempFile = `src/modules/files/tmp/${id}.json`;
     const data = await fsPromises.readFile(tempFile, {
@@ -198,6 +198,54 @@ export class FilesService {
     // Удаляем сохранённые временные файлы
     await fsPromises.unlink(tempFile);
     return newFile;
+  }
+
+  async replaceFileById(id) {
+    try {
+      // Пробуем найти данный файл в базе данных
+      const { document, stream: readFileStream } =
+        await this.gridFSRepository.readFileStreamWithDocument(id);
+
+      // Определяем константы путей
+      const newFilePath = `src/modules/files/replace/${id}`;
+      const oldDocumentFile = `src/modules/files/replace/recovery/${id}`;
+      const oldDocument = `src/modules/files/replace/recovery/${id}.json`;
+
+      const documentWithMd5 = { md5: null, ...document };
+
+      // Запишем в recovery старый файл и его мета данные
+      await fsPromises.writeFile(
+        oldDocumentFile,
+        await this.stream2buffer(readFileStream),
+      );
+      await fsPromises.writeFile(oldDocument, JSON.stringify(documentWithMd5));
+
+      // Вычисляем ХЭШ сжатого файла
+      const md5 = await md5File(newFilePath);
+
+      // Удаляем файл из gridfs
+      await this.gridFSRepository.delete(id);
+      // Загружаем уже сжатый файл в gridfs бех удаления файла с диска
+      const newFile = await this.gridFSRepository.uploadFileById(
+        newFilePath,
+        {
+          id: new Types.ObjectId(document._id),
+          filename: `${document.filename}`,
+          contentType: document.contentType || document?.metadata?.mimetype,
+          metadata: {
+            ...document.metadata,
+            isCompressed: true,
+            md5,
+            oldMd5: documentWithMd5?.md5 || null,
+          },
+        },
+        true,
+      );
+      return newFile;
+    } catch (e) {
+      this.logger.error(e);
+      return `Не удалось заменить файл. ${e.message}`;
+    }
   }
 
   async stream2buffer(stream: Stream): Promise<Buffer> {
